@@ -9,10 +9,10 @@ from django.db.models.fields import FieldDoesNotExist
 from django.utils.datastructures import SortedDict
 from django.utils.encoding import force_str, force_text
 from django.utils.translation import ugettext, ugettext_lazy
-from django.utils.http import urlencode
+from django.utils.http import urlencode, urlquote
 
 from django.contrib.admin import FieldListFilter
-from django.contrib.admin.options import IncorrectLookupParameters
+from django.contrib.admin.options import IncorrectLookupParameters, RETURN_GET_PARAM
 from django.contrib.admin.util import (quote, get_fields_from_path,
     lookup_needs_distinct, prepare_lookup_value)
 
@@ -50,6 +50,9 @@ class ChangeList(object):
         self.list_per_page = list_per_page
         self.list_max_show_all = list_max_show_all
         self.model_admin = model_admin
+        self.this_changelist_url = None
+        if len(request.GET):
+            self.this_changelist_url = request.get_full_path()
 
         # Get search parameters from the query string.
         try:
@@ -378,7 +381,10 @@ class ChangeList(object):
 
     def url_for_result(self, result):
         pk = getattr(result, self.pk_attname)
-        return reverse('admin:%s_%s_change' % (self.opts.app_label,
+        base_url = reverse('admin:%s_%s_change' % (self.opts.app_label,
                                                self.opts.module_name),
                        args=(quote(pk),),
                        current_app=self.model_admin.admin_site.name)
+        if self.this_changelist_url:
+            base_url += "?%s=%s" % (RETURN_GET_PARAM, urlquote(self.this_changelist_url))
+        return base_url

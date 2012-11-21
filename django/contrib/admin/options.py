@@ -26,6 +26,7 @@ from django.template.response import SimpleTemplateResponse, TemplateResponse
 from django.utils.decorators import method_decorator
 from django.utils.datastructures import SortedDict
 from django.utils.html import escape, escapejs
+from django.utils.http import urlquote
 from django.utils.safestring import mark_safe
 from django.utils import six
 from django.utils.text import capfirst, get_text_list
@@ -34,6 +35,9 @@ from django.utils.translation import ungettext
 from django.utils.encoding import force_text
 
 HORIZONTAL, VERTICAL = 1, 2
+
+RETURN_GET_PARAM = '_return_to'
+
 # returns the <ul> class for a given radio_admin field
 get_ul_class = lambda x: 'radiolist%s' % ((x == HORIZONTAL) and ' inline' or '')
 
@@ -764,6 +768,8 @@ class ModelAdmin(BaseModelAdmin):
         opts = self.model._meta
         app_label = opts.app_label
         ordered_objects = opts.get_ordered_objects()
+        if RETURN_GET_PARAM in request.GET:
+            form_url = '?%s=%s' % (RETURN_GET_PARAM, urlquote(request.GET.get(RETURN_GET_PARAM, '')))
         context.update({
             'add': add,
             'change': change,
@@ -830,7 +836,9 @@ class ModelAdmin(BaseModelAdmin):
                 continue_editing_url = 'admin:%s_%s_change' % (app_label, model_name)
             url = reverse(continue_editing_url, args=(quote(pk_value),),
                           current_app=site_name)
-            if "_popup" in request.POST:
+            if RETURN_GET_PARAM in request.GET:
+                url += '?%s=%s' % (RETURN_GET_PARAM, urlquote(request.GET.get(RETURN_GET_PARAM, '')))
+            elif "_popup" in request.POST:
                 url += "?_popup=1"
             return HttpResponseRedirect(url)
 
@@ -846,6 +854,8 @@ class ModelAdmin(BaseModelAdmin):
             if add_another_url is None:
                 add_another_url = 'admin:%s_%s_add' % (app_label, model_name)
             url = reverse(add_another_url, current_app=site_name)
+            if RETURN_GET_PARAM in request.GET:
+                url += '?%s=%s' % (RETURN_GET_PARAM, urlquote(request.GET.get(RETURN_GET_PARAM, '')))
             return HttpResponseRedirect(url)
         else:
             msg = _('The %(name)s "%(obj)s" was added successfully.') % msg_dict
@@ -862,6 +872,8 @@ class ModelAdmin(BaseModelAdmin):
                 if noperm_url is None:
                     noperm_url = 'admin:index'
                 url = reverse(noperm_url, current_app=site_name)
+            if RETURN_GET_PARAM in request.GET:
+                url = request.GET.get(RETURN_GET_PARAM, '')
             return HttpResponseRedirect(url)
 
     def response_change(self, request, obj, continue_editing_url=None,
@@ -905,7 +917,9 @@ class ModelAdmin(BaseModelAdmin):
                 continue_editing_url = 'admin:%s_%s_change' % (app_label, model_name)
             url = reverse(continue_editing_url, args=(quote(obj.pk),),
                           current_app=site_name)
-            if "_popup" in request.POST:
+            if RETURN_GET_PARAM in request.GET:
+                url += '?%s=%s' % (RETURN_GET_PARAM, urlquote(request.GET.get(RETURN_GET_PARAM, '')))
+            elif "_popup" in request.POST:
                 url += "?_popup=1"
             return HttpResponseRedirect(url)
         elif "_saveasnew" in request.POST:
@@ -915,6 +929,8 @@ class ModelAdmin(BaseModelAdmin):
                 save_as_new_url = 'admin:%s_%s_change' % (app_label, model_name)
             url = reverse(save_as_new_url, args=(quote(obj.pk),),
                           current_app=site_name)
+            if RETURN_GET_PARAM in request.GET:
+                url += '?%s=%s' % (RETURN_GET_PARAM, urlquote(request.GET.get(RETURN_GET_PARAM, '')))
             return HttpResponseRedirect(url)
         elif "_addanother" in request.POST:
             msg = _('The %(name)s "%(obj)s" was changed successfully. You may add another %(name)s below.') % msg_dict
@@ -922,6 +938,8 @@ class ModelAdmin(BaseModelAdmin):
             if add_another_url is None:
                 add_another_url = 'admin:%s_%s_add' % (app_label, model_name)
             url = reverse(add_another_url, current_app=site_name)
+            if RETURN_GET_PARAM in request.GET:
+                url += '?%s=%s' % (RETURN_GET_PARAM, urlquote(request.GET.get(RETURN_GET_PARAM, '')))
             return HttpResponseRedirect(url)
         else:
             msg = _('The %(name)s "%(obj)s" was changed successfully.') % msg_dict
@@ -938,6 +956,8 @@ class ModelAdmin(BaseModelAdmin):
                 if noperm_url is None:
                     noperm_url = 'admin:index'
                 url = reverse(noperm_url, current_app=site_name)
+            if RETURN_GET_PARAM in request.GET:
+                url = request.GET.get(RETURN_GET_PARAM, '')
             return HttpResponseRedirect(url)
 
     def response_action(self, request, queryset):
@@ -1182,6 +1202,10 @@ class ModelAdmin(BaseModelAdmin):
             'inline_admin_formsets': inline_admin_formsets,
             'errors': helpers.AdminErrorList(form, formsets),
             'app_label': opts.app_label,
+            'return_to': {
+                'parameter': RETURN_GET_PARAM,
+                'url': request.GET.get(RETURN_GET_PARAM)
+            }
         }
         context.update(extra_context or {})
         return self.render_change_form(request, context, change=True, obj=obj, form_url=form_url)
@@ -1329,8 +1353,13 @@ class ModelAdmin(BaseModelAdmin):
             'action_form': action_form,
             'actions_on_top': self.actions_on_top,
             'actions_on_bottom': self.actions_on_bottom,
-            'actions_selection_counter': self.actions_selection_counter,
+            'actions_selection_counter': self.actions_selection_counter
         }
+        if len(request.GET):
+            context['return_to'] = {
+                'parameter': RETURN_GET_PARAM,
+                'url': request.get_full_path()
+            }
         context.update(extra_context or {})
 
         return TemplateResponse(request, self.change_list_template or [
@@ -1393,6 +1422,10 @@ class ModelAdmin(BaseModelAdmin):
             "protected": protected,
             "opts": opts,
             "app_label": app_label,
+            "return_to": {
+                "parameter": RETURN_GET_PARAM,
+                "url": request.GET.get(RETURN_GET_PARAM)
+            }
         }
         context.update(extra_context or {})
 
@@ -1421,6 +1454,10 @@ class ModelAdmin(BaseModelAdmin):
             'object': obj,
             'app_label': app_label,
             'opts': opts,
+            "return_to": {
+                "parameter": RETURN_GET_PARAM,
+                "url": request.GET.get(RETURN_GET_PARAM)
+            }
         }
         context.update(extra_context or {})
         return TemplateResponse(request, self.object_history_template or [

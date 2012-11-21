@@ -474,8 +474,10 @@ class AdminViewBasicTest(TestCase):
         link2 = reverse('admin:admin_views_fabric_change', args=(2,), current_app=self.urlbit)
         response = self.client.get('/test_admin/%s/admin_views/fabric/' % self.urlbit)
         fail_msg = "Changelist table isn't showing the right human-readable values set by a model field 'choices' option named group."
-        self.assertContains(response, '<a href="%s">Horizontal</a>' % link1, msg_prefix=fail_msg, html=True)
-        self.assertContains(response, '<a href="%s">Vertical</a>' % link2, msg_prefix=fail_msg, html=True)
+        pattern_link1 = re.compile("""<a href="%s(\?[^"]+)?">Horizontal</a>""" % link1)
+        pattern_link2 = re.compile("""<a href="%s(\?[^"]+)?">Vertical</a>""" % link2)
+        self.assertRegexpMatches(response.content, pattern_link1, msg=fail_msg)
+        self.assertRegexpMatches(response.content, pattern_link2, msg=fail_msg)
 
     def testNamedGroupFieldChoicesFilter(self):
         """
@@ -1390,8 +1392,9 @@ class AdminViewStringPrimaryKeyTest(TestCase):
         response = self.client.get(prefix)
         # this URL now comes through reverse(), thus iri_to_uri encoding
         pk_final_url = escape(iri_to_uri(quote(self.pk)))
-        should_contain = """<th><a href="%s%s/">%s</a></th>""" % (prefix, pk_final_url, escape(self.pk))
-        self.assertContains(response, should_contain)
+        pattern = re.escape('<th><a href="%s%s/' % (prefix, pk_final_url)) + '(\?[^"]+)?' + re.escape('">%s</a></th>' % escape(self.pk))
+        pattern_should_contain = re.compile(pattern)
+        self.assertRegexpMatches(response.content, pattern_should_contain)
 
     def test_recentactions_link(self):
         "The link from the recent actions list referring to the changeform of the object should be quoted"
@@ -2059,9 +2062,10 @@ class AdminViewListEditable(TestCase):
         self.assertContains(response, 'id="id_form-0-id"', 1)  # Only one hidden field, in a separate place than the table.
         self.assertContains(response, 'id="id_form-1-id"', 1)
         self.assertContains(response, '<div class="hiddenfields">\n<input type="hidden" name="form-0-id" value="%d" id="id_form-0-id" /><input type="hidden" name="form-1-id" value="%d" id="id_form-1-id" />\n</div>' % (story2.id, story1.id), html=True)
-        self.assertContains(response, '<th><a href="%s">%d</a></th>' % (link1, story1.id), 1)
-        self.assertContains(response, '<th><a href="%s">%d</a></th>' % (link2, story2.id), 1)
-
+        pattern_link1 = re.compile("""<th><a href="%s(\?[^"]+)?">%d</a></th>""" % (link1, story1.id))
+        pattern_link2 = re.compile("""<th><a href="%s(\?[^"]+)?">%d</a></th>""" % (link2, story2.id))
+        self.assertRegexpMatches(response.content, pattern_link1)
+        self.assertRegexpMatches(response.content, pattern_link2)
 
 @override_settings(PASSWORD_HASHERS=('django.contrib.auth.hashers.SHA1PasswordHasher',))
 class AdminSearchTest(TestCase):

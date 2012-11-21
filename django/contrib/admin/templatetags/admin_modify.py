@@ -28,6 +28,7 @@ def submit_row(context):
     change = context['change']
     is_popup = context['is_popup']
     save_as = context['save_as']
+    return_to = context.get('return_to')
     ctx = {
         'opts': opts,
         'onclick_attrib': (opts.get_ordered_objects() and change
@@ -39,6 +40,7 @@ def submit_row(context):
                             not is_popup and (not save_as or context['add']),
         'show_save_and_continue': not is_popup and context['has_change_permission'],
         'is_popup': is_popup,
+        'return_to': return_to,
         'show_save': True
     }
     if context.get('original') is not None:
