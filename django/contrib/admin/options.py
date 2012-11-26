@@ -12,7 +12,7 @@ from django.contrib.admin.util import quote, unquote, flatten_fieldsets, get_del
 from django.contrib.admin.templatetags.admin_static import static
 from django.contrib import messages
 from django.views.decorators.csrf import csrf_protect
-from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError, SuspiciousOperation
 from django.core.paginator import Paginator
 from django.core.urlresolvers import reverse
 from django.db import models, transaction, router
@@ -406,7 +406,7 @@ class ModelAdmin(BaseModelAdmin):
         if not return_url:
             return ''
         elif not return_url.startswith('/'):
-            raise PermissionDenied
+            raise SuspiciousOperation
         return return_url
 
     def get_return_url_querystring(self, request):
