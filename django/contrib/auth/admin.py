@@ -109,6 +109,10 @@ class UserAdmin(admin.ModelAdmin):
         defaults = {
             'auto_populated_fields': (),
             'username_help_text': username_field.help_text,
+            'return_to': {
+                'parameter': admin.options.RETURN_GET_PARAM,
+                'url': request.GET.get(admin.options.RETURN_GET_PARAM)
+            }
         }
         extra_context.update(defaults)
         return super(UserAdmin, self).add_view(request, form_url,

@@ -1402,6 +1402,8 @@ class ModelAdmin(BaseModelAdmin):
             if not self.has_change_permission(request, None):
                 return HttpResponseRedirect(reverse('admin:index',
                                                     current_app=self.admin_site.name))
+            if request.GET.get(RETURN_GET_PARAM):
+                return HttpResponseRedirect(request.GET.get(RETURN_GET_PARAM))
             return HttpResponseRedirect(reverse('admin:%s_%s_changelist' %
                                         (opts.app_label, opts.module_name),
                                         current_app=self.admin_site.name))
