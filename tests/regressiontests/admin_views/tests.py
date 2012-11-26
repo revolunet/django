@@ -21,6 +21,7 @@ from django.contrib.admin.models import LogEntry, DELETION
 from django.contrib.admin.sites import LOGIN_FORM_KEY
 from django.contrib.admin.util import quote
 from django.contrib.admin.views.main import IS_POPUP_VAR
+from django.contrib.admin.options import RETURN_GET_PARAM
 from django.contrib.admin.tests import AdminSeleniumWebDriverTestCase
 from django.contrib.auth import REDIRECT_FIELD_NAME
 from django.contrib.auth.models import Group, User, Permission, UNUSABLE_PASSWORD
@@ -32,7 +33,7 @@ from django.utils import formats, translation, unittest
 from django.utils.cache import get_max_age
 from django.utils.encoding import iri_to_uri, force_bytes
 from django.utils.html import escape
-from django.utils.http import urlencode
+from django.utils.http import urlencode, urlquote
 from django.utils import six
 from django.test.utils import override_settings
 
@@ -3119,6 +3120,170 @@ class SeleniumPrePopulatedFirefoxTests(AdminSeleniumWebDriverTestCase):
             slug1='tabular-inline-ignored-characters-1981-08-22',
             slug2='option-one-tabular-inline-ignored-characters',
         )
+
+
+@override_settings(PASSWORD_HASHERS=('django.contrib.auth.hashers.SHA1PasswordHasher',))
+class SeleniumChangeListFiltersTests(AdminSeleniumWebDriverTestCase):
+    webdriver_class = 'selenium.webdriver.firefox.webdriver.WebDriver'
+    urls = "regressiontests.admin_views.urls"
+    fixtures = ['admin-views-users.xml']
+
+    def absolute_to_relative_url(self, url):
+        # strips the http+host part from an url
+        return '/' + '/'.join(url.split('/')[3:])
+
+    def wait_selenium_ready(self):
+        # just wait the next body tag
+        from selenium.common.exceptions import TimeoutException
+        try:
+            self.wait_loaded_tag('body')
+        except TimeoutException:
+            pass
+
+    def test_basic(self):
+        """
+        Ensure that the change list filters are never lost in various
+        admin views and that the user is redirect accordingly.
+        """
+        self.admin_login(username='super', password='secret', login_url='/test_admin/admin/')
+        self.selenium.get('%s%s' % (self.live_server_url, '/test_admin/admin/auth/user/'))
+
+        # change superuser filter
+        self.selenium.find_element_by_xpath("//h3[text()=' By superuser status ']/following-sibling::ul[1]/li[last()]/a").click()
+
+        # activate second filter
+        self.selenium.find_element_by_xpath("//h3[text()=' By staff status ']/following-sibling::ul[1]/li[last()]/a").click()
+
+        # compute the change list relative url (remove http+host part)
+        return_url = self.absolute_to_relative_url(self.selenium.current_url)
+        full_return_url = '%s=%s' % (RETURN_GET_PARAM, urlquote(return_url))
+
+        # check if change url is correct
+        detail_link = self.selenium.find_element_by_xpath("//table[@id='result_list']/tbody/tr[1]/th/a")
+        detail_url = detail_link.get_attribute('href')
+        url, detail_link_qs = detail_url.split('?')
+        self.assertEqual(detail_link_qs, full_return_url, 'return url not found in detail link')
+
+        # open edit page
+        detail_link.click()
+        self.wait_selenium_ready()
+
+        # check breadcrumbs link
+        users_url = self.absolute_to_relative_url(self.selenium.find_element_by_xpath("//div[@class='breadcrumbs']/a[last()]").get_attribute('href'))
+        self.assertEqual(users_url, return_url, 'invalid breadcrumb link')
+        # save and continue
+        self.selenium.find_element_by_xpath("//input[@type='submit' and @name='_continue']").click()
+        self.wait_selenium_ready()
+
+        # check breadcrumbs link again
+        users_url = self.absolute_to_relative_url(self.selenium.find_element_by_xpath("//div[@class='breadcrumbs']/a[last()]").get_attribute('href'))
+        self.assertEqual(users_url, return_url, 'invalid breadcrumb link')
+        # save
+        self.selenium.find_element_by_xpath("//input[@type='submit' and @name='_save']").click()
+        self.wait_selenium_ready()
+
+        # check change list url still correct
+        current_url = self.absolute_to_relative_url(self.selenium.current_url)
+        self.assertEqual(current_url, return_url, 'incorrect change list url after save')
+
+        # check if change url is correct
+        detail_link = self.selenium.find_element_by_xpath("//table[@id='result_list']/tbody/tr[1]/th/a")
+        detail_url = detail_link.get_attribute('href')
+        url, detail_link_qs = detail_url.split('?')
+        self.assertEqual(detail_link_qs, full_return_url, 'return url not found in detail link')
+
+        # open edit page
+        detail_link.click()
+        self.wait_selenium_ready()
+
+        # check breadcrumbs link
+        users_url = self.absolute_to_relative_url(self.selenium.find_element_by_xpath("//div[@class='breadcrumbs']/a[last()]").get_attribute('href'))
+        self.assertEqual(users_url, return_url, 'invalid breadcrumb link')
+        # save and add another
+        self.selenium.find_element_by_xpath("//input[@type='submit' and @name='_addanother']").click()
+        self.wait_selenium_ready()
+
+        # check breadcrumbs link again
+        users_url = self.absolute_to_relative_url(self.selenium.find_element_by_xpath("//div[@class='breadcrumbs']/a[last()]").get_attribute('href'))
+        self.assertEqual(users_url, return_url, 'invalid breadcrumb link')
+
+        # fill some data
+        self.selenium.find_element_by_css_selector('input#id_username').send_keys('url_tester')
+        self.selenium.find_element_by_css_selector('input#id_password1').send_keys('dummy')
+        self.selenium.find_element_by_css_selector('input#id_password2').send_keys('dummy')
+        # save the add form
+        self.selenium.find_element_by_xpath("//input[@type='submit' and @name='_save']").click()
+        self.wait_selenium_ready()
+        # save the change form
+        self.selenium.find_element_by_xpath("//input[@type='submit' and @name='_save']").click()
+        self.wait_selenium_ready()
+
+        # check change list url still correct
+        current_url = self.absolute_to_relative_url(self.selenium.current_url)
+        self.assertEqual(current_url, return_url, 'incorrect change list url after save')
+
+        # check if change url is still correct, using our newly created user (2)
+        detail_link = self.selenium.find_element_by_xpath("//table[@id='result_list']/tbody/tr[2]/th/a")
+        detail_url = detail_link.get_attribute('href')
+        url, detail_link_qs = detail_url.split('?')
+        self.assertEqual(detail_link_qs, full_return_url, 'return url not found in detail link')
+
+        # open edit page
+        detail_link.click()
+        self.wait_selenium_ready()
+
+        # check breadcrumbs link
+        users_url = self.absolute_to_relative_url(self.selenium.find_element_by_xpath("//div[@class='breadcrumbs']/a[last()]").get_attribute('href'))
+        self.assertEqual(users_url, return_url, 'invalid breadcrumb link')
+
+        # check history link
+        history_link = self.selenium.find_element_by_xpath("//ul[@class='object-tools']/li/a[@class='historylink']")
+        history_url = history_link.get_attribute('href')
+
+        url, history_link_qs = history_url.split('?')
+        self.assertEqual(history_link_qs, full_return_url, 'return url not found in history link')
+
+        # check history page
+        history_link.click()
+        self.wait_selenium_ready()
+
+        # check breadcrumbs links
+        users_url = self.absolute_to_relative_url(self.selenium.find_element_by_xpath("//div[@class='breadcrumbs']/a[last()-1]").get_attribute('href'))
+        self.assertEqual(users_url, return_url, 'invalid breadcrumb link for users')
+        user_link = self.selenium.find_element_by_xpath("//div[@class='breadcrumbs']/a[last()]")
+        user_url = self.absolute_to_relative_url(user_link.get_attribute('href'))
+        user_url, user_qs = user_url.split('?')
+        self.assertEqual(user_qs, full_return_url, 'invalid breadcrumb link for current user')
+
+        # return to edit
+        user_link.click()
+        self.wait_selenium_ready()
+
+        # check delete page
+        delete_link = self.selenium.find_element_by_xpath("//a[@class='deletelink']")
+        delete_url = delete_link.get_attribute('href')
+        delete_url, delete_qs = delete_url.split('?')
+        self.assertEqual(delete_qs, full_return_url, 'invalid return link on delete button')
+
+        delete_link.click()
+        self.wait_selenium_ready()
+
+        # check breadcrumbs links
+        users_url = self.absolute_to_relative_url(self.selenium.find_element_by_xpath("//div[@class='breadcrumbs']/a[last()-1]").get_attribute('href'))
+        self.assertEqual(users_url, return_url, 'invalid breadcrumb link for users')
+        user_link = self.selenium.find_element_by_xpath("//div[@class='breadcrumbs']/a[last()]")
+        user_url = self.absolute_to_relative_url(user_link.get_attribute('href'))
+        user_url, user_qs = user_url.split('?')
+        self.assertEqual(user_qs, full_return_url, 'invalid breadcrumb link for current user')
+
+        # click delete
+        delete_submit = self.selenium.find_element_by_xpath("//input[@type='submit']")
+        delete_submit.click()
+        self.wait_selenium_ready()
+
+        # check change list url still correct
+        current_url = self.absolute_to_relative_url(self.selenium.current_url)
+        self.assertEqual(current_url, return_url, 'incorrect change list url after object deletion')
 
 
 class SeleniumPrePopulatedChromeTests(SeleniumPrePopulatedFirefoxTests):
