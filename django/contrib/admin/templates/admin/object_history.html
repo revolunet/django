@@ -6,7 +6,7 @@
 <div class="breadcrumbs">
 <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
 &rsaquo; <a href="{% url 'admin:app_list' app_label=app_label %}">{{ app_label|capfirst|escape }}</a>
-&rsaquo; <a href="{% if return_to.url %}{{ return_to.url }}{% else %}{% url opts|admin_urlname:'changelist' %}{% endif %}">{{ module_name }}</a>
+&rsaquo; <a href="{% if return_to.url %}{{ return_to.url|safe }}{% else %}{% url opts|admin_urlname:'changelist' %}{% endif %}">{{ module_name }}</a>
 &rsaquo; <a href="{% url opts|admin_urlname:'change' object.pk|admin_urlquote %}{% if return_to.url %}?{{ return_to.parameter }}={{ return_to.url|urlencode }}{% endif %}">{{ object|truncatewords:"18" }}</a>
 &rsaquo; {% trans 'History' %}
 </div>

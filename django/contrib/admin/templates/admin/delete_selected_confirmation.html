@@ -6,7 +6,7 @@
 <div class="breadcrumbs">
 <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
 &rsaquo; <a href="{% url 'admin:app_list' app_label=app_label %}">{{ app_label|capfirst|escape }}</a>
-&rsaquo; <a href="{% if return_to.url %}{{ return_to.url }}{% else %}{% url opts|admin_urlname:'changelist' %}{% endif %}">{{ opts.verbose_name_plural|capfirst }}</a>
+&rsaquo; <a href="{% if return_to.url %}{{ return_to.url|safe }}{% else %}{% url opts|admin_urlname:'changelist' %}{% endif %}">{{ opts.verbose_name_plural|capfirst }}</a>
 &rsaquo; {% trans 'Delete multiple objects' %}
 </div>
 {% endblock %}
