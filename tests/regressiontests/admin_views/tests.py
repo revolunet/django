@@ -3123,167 +3123,176 @@ class SeleniumPrePopulatedFirefoxTests(AdminSeleniumWebDriverTestCase):
 
 
 @override_settings(PASSWORD_HASHERS=('django.contrib.auth.hashers.SHA1PasswordHasher',))
-class SeleniumChangeListFiltersTests(AdminSeleniumWebDriverTestCase):
-    webdriver_class = 'selenium.webdriver.firefox.webdriver.WebDriver'
+class AdminKeepChangeListFiltersTests(TestCase):
+    ''' Ensure that change list filters are always kept along in your navigation
+        in the change/add/delete/history view
+    '''
     urls = "regressiontests.admin_views.urls"
-    fixtures = ['admin-views-users.xml']
+    fixtures = ['admin-views-users']
 
-    def absolute_to_relative_url(self, url):
-        # strips the http+host part from an url
-        return '/' + '/'.join(url.split('/')[3:])
+    def setUp(self):
+        self.client.login(username='super', password='secret')
 
-    def wait_selenium_ready(self):
-        # just wait the next body tag
-        from selenium.common.exceptions import TimeoutException
-        try:
-            self.wait_loaded_tag('body')
-        except TimeoutException:
-            pass
+    def tearDown(self):
+        self.client.logout()
 
-    def test_basic(self):
-        """
-        Ensure that the change list filters are never lost in various
-        admin views and that the user is redirect accordingly.
-        """
-        self.admin_login(username='super', password='secret', login_url='/test_admin/admin/')
-        self.selenium.get('%s%s' % (self.live_server_url, '/test_admin/admin/auth/user/'))
+    def get_base_filter(self):
+        ''' sample filter to apply to the change list view '''
+        return '?' + urlencode({
+            'is_superuser__exact': 0,
+            'is_staff__exact': 0
+        })
 
-        # change superuser filter
-        self.selenium.find_element_by_xpath("//h3[text()=' By superuser status ']/following-sibling::ul[1]/li[last()]/a").click()
+    def get_sample_user_id(self):
+        return 104
 
-        # activate second filter
-        self.selenium.find_element_by_xpath("//h3[text()=' By staff status ']/following-sibling::ul[1]/li[last()]/a").click()
+    def get_base_url(self, quote=False):
+        ''' base change list url where we should always be redirected to '''
+        base_url = "%s%s" % (reverse('admin:auth_user_changelist'), self.get_base_filter())
+        if quote:
+            base_url = urlquote(base_url)
+        return base_url
 
-        # compute the change list relative url (remove http+host part)
-        return_url = self.absolute_to_relative_url(self.selenium.current_url)
-        full_return_url = '%s=%s' % (RETURN_GET_PARAM, urlquote(return_url))
+    def get_return_querystring(self):
+        ''' return the full return querystring param+value '''
+        return "%s=%s" % (RETURN_GET_PARAM, self.get_base_url(quote=True))
 
-        # check if change url is correct
-        detail_link = self.selenium.find_element_by_xpath("//table[@id='result_list']/tbody/tr[1]/th/a")
-        detail_url = detail_link.get_attribute('href')
-        url, detail_link_qs = detail_url.split('?')
-        self.assertEqual(detail_link_qs, full_return_url, 'return url not found in detail link')
+    def get_detail_url(self, user_id=None):
+        ''' return sample detail page link with the return link embedded in the querystring'''
+        if not user_id:
+            user_id = self.get_sample_user_id()
+        return "%s?%s" % (reverse('admin:auth_user_change', args=(user_id,)), self.get_return_querystring())
 
-        # open edit page
-        detail_link.click()
-        self.wait_selenium_ready()
+    def get_add_url(self):
+        ''' return sample add page link with the return link embedded in the querystring'''
+        add_url = "%s?%s" % (reverse('admin:auth_user_add'), self.get_return_querystring())
+        return add_url
 
-        # check breadcrumbs link
-        users_url = self.absolute_to_relative_url(self.selenium.find_element_by_xpath("//div[@class='breadcrumbs']/a[last()]").get_attribute('href'))
-        self.assertEqual(users_url, return_url, 'invalid breadcrumb link')
-        # save and continue
-        self.selenium.find_element_by_xpath("//input[@type='submit' and @name='_continue']").click()
-        self.wait_selenium_ready()
+    def get_history_url(self):
+        ''' return history page url with the return link embedded in the querystring'''
+        return "%s?%s" % (reverse('admin:auth_user_history', args=(self.get_sample_user_id(),)), self.get_return_querystring())
 
-        # check breadcrumbs link again
-        users_url = self.absolute_to_relative_url(self.selenium.find_element_by_xpath("//div[@class='breadcrumbs']/a[last()]").get_attribute('href'))
-        self.assertEqual(users_url, return_url, 'invalid breadcrumb link')
-        # save
-        self.selenium.find_element_by_xpath("//input[@type='submit' and @name='_save']").click()
-        self.wait_selenium_ready()
+    def get_delete_url(self):
+        ''' return delete page url with the return link embedded in the querystring'''
+        return "%s?%s" % (reverse('admin:auth_user_delete', args=(self.get_sample_user_id(),)), self.get_return_querystring())
 
-        # check change list url still correct
-        current_url = self.absolute_to_relative_url(self.selenium.current_url)
-        self.assertEqual(current_url, return_url, 'incorrect change list url after save')
+    def test_change_list_links(self):
+        ''' test if the detail url is correct when applying filters to the chang list '''
+        response = self.client.get('/test_admin/admin/auth/user/' + self.get_base_filter())
+        self.assertEqual(response.status_code, 200)
 
-        # check if change url is correct
-        detail_link = self.selenium.find_element_by_xpath("//table[@id='result_list']/tbody/tr[1]/th/a")
-        detail_url = detail_link.get_attribute('href')
-        url, detail_link_qs = detail_url.split('?')
-        self.assertEqual(detail_link_qs, full_return_url, 'return url not found in detail link')
+        # check the detail link has the correct return link inside
+        detail_link = """<a href="%s">joepublic</a>""" % self.get_detail_url()
+        self.assertContains(response, detail_link, count=1)
 
-        # open edit page
-        detail_link.click()
-        self.wait_selenium_ready()
+    def test_change_links(self):
+        ''' test if the detail page has correct action links '''
+        response = self.client.get(self.get_detail_url())
+        self.assertEqual(response.status_code, 200)
 
-        # check breadcrumbs link
-        users_url = self.absolute_to_relative_url(self.selenium.find_element_by_xpath("//div[@class='breadcrumbs']/a[last()]").get_attribute('href'))
-        self.assertEqual(users_url, return_url, 'invalid breadcrumb link')
-        # save and add another
-        self.selenium.find_element_by_xpath("//input[@type='submit' and @name='_addanother']").click()
-        self.wait_selenium_ready()
+        # check form action
+        form_action = """<form enctype="multipart/form-data" action="?%s" method="post" id="user_form">""" % self.get_return_querystring()
+        self.assertContains(response, form_action, count=1)
 
-        # check breadcrumbs link again
-        users_url = self.absolute_to_relative_url(self.selenium.find_element_by_xpath("//div[@class='breadcrumbs']/a[last()]").get_attribute('href'))
-        self.assertEqual(users_url, return_url, 'invalid breadcrumb link')
-
-        # fill some data
-        self.selenium.find_element_by_css_selector('input#id_username').send_keys('url_tester')
-        self.selenium.find_element_by_css_selector('input#id_password1').send_keys('dummy')
-        self.selenium.find_element_by_css_selector('input#id_password2').send_keys('dummy')
-        # save the add form
-        self.selenium.find_element_by_xpath("//input[@type='submit' and @name='_save']").click()
-        self.wait_selenium_ready()
-        # save the change form
-        self.selenium.find_element_by_xpath("//input[@type='submit' and @name='_save']").click()
-        self.wait_selenium_ready()
-
-        # check change list url still correct
-        current_url = self.absolute_to_relative_url(self.selenium.current_url)
-        self.assertEqual(current_url, return_url, 'incorrect change list url after save')
-
-        # check if change url is still correct, using our newly created user (2)
-        detail_link = self.selenium.find_element_by_xpath("//table[@id='result_list']/tbody/tr[2]/th/a")
-        detail_url = detail_link.get_attribute('href')
-        url, detail_link_qs = detail_url.split('?')
-        self.assertEqual(detail_link_qs, full_return_url, 'return url not found in detail link')
-
-        # open edit page
-        detail_link.click()
-        self.wait_selenium_ready()
-
-        # check breadcrumbs link
-        users_url = self.absolute_to_relative_url(self.selenium.find_element_by_xpath("//div[@class='breadcrumbs']/a[last()]").get_attribute('href'))
-        self.assertEqual(users_url, return_url, 'invalid breadcrumb link')
+        # check Users breadcrumbs link
+        breadcrumb_users = '<a href="%s">Users</a>' % self.get_base_url()
+        self.assertContains(response, breadcrumb_users, count=1)
 
         # check history link
-        history_link = self.selenium.find_element_by_xpath("//ul[@class='object-tools']/li/a[@class='historylink']")
-        history_url = history_link.get_attribute('href')
+        history_link = """<a href="%s" class="historylink">History</a>""" % self.get_history_url()
+        self.assertContains(response, history_link, count=1)
 
-        url, history_link_qs = history_url.split('?')
-        self.assertEqual(history_link_qs, full_return_url, 'return url not found in history link')
+        # check delete link
+        delete_link = """<a href="%s" class="deletelink">Delete</a>""" % (self.get_delete_url())
+        self.assertContains(response, delete_link, count=1)
 
-        # check history page
-        history_link.click()
-        self.wait_selenium_ready()
+    def test_change_redirects(self):
+        ''' test if we're correctly redirect on object saves '''
+        user_data = {
+            "username": "joepublic",
+            "first_name": "Joe",
+            "last_name": "Public",
+            "email": "joepublic@example.com",
+            "is_active": "on",
+            "last_login_0": "2012-11-20",
+            "last_login_1": "18:51:53",
+            "initial-last_login_0": "2012-11-20",
+            "initial-last_login_1": "18:51:53",
+            "date_joined_0": "2012-11-20",
+            "date_joined_1": "18:51:53",
+            "initial-date_joined_0": "2012-11-20",
+            "initial-date_joined_1": "18:51:53"
+        }
+        # test redirect on save : should be redirect to filtered change list
+        user_data['_save'] = 1
+        response = self.client.post(self.get_detail_url(), data=user_data)
+        self.assertRedirects(response, self.get_base_url())
 
-        # check breadcrumbs links
-        users_url = self.absolute_to_relative_url(self.selenium.find_element_by_xpath("//div[@class='breadcrumbs']/a[last()-1]").get_attribute('href'))
-        self.assertEqual(users_url, return_url, 'invalid breadcrumb link for users')
-        user_link = self.selenium.find_element_by_xpath("//div[@class='breadcrumbs']/a[last()]")
-        user_url = self.absolute_to_relative_url(user_link.get_attribute('href'))
-        user_url, user_qs = user_url.split('?')
-        self.assertEqual(user_qs, full_return_url, 'invalid breadcrumb link for current user')
+        # test redirect on save and continue : should be redirect to same edit page with querystring in place
+        user_data.pop('_save')
+        user_data['_continue'] = 1
+        response = self.client.post(self.get_detail_url(), data=user_data)
+        self.assertRedirects(response, self.get_detail_url())
 
-        # return to edit
-        user_link.click()
-        self.wait_selenium_ready()
+        # test redirect on save and add new
+        user_data.pop('_continue')
+        user_data['_addanother'] = 1
+        response = self.client.post(self.get_detail_url(), data=user_data)
+        self.assertRedirects(response, self.get_add_url())
 
-        # check delete page
-        delete_link = self.selenium.find_element_by_xpath("//a[@class='deletelink']")
-        delete_url = delete_link.get_attribute('href')
-        delete_url, delete_qs = delete_url.split('?')
-        self.assertEqual(delete_qs, full_return_url, 'invalid return link on delete button')
+    def test_add_page(self):
+        ''' test links in the add item page, before and after submit '''
+        user_data = {
+            "username": "dummy",
+            "password1": "test",
+            "password2": "test"
+        }
 
-        delete_link.click()
-        self.wait_selenium_ready()
+        # get the submit page
+        response = self.client.get(self.get_add_url())
+        self.assertEqual(response.status_code, 200)
 
-        # check breadcrumbs links
-        users_url = self.absolute_to_relative_url(self.selenium.find_element_by_xpath("//div[@class='breadcrumbs']/a[last()-1]").get_attribute('href'))
-        self.assertEqual(users_url, return_url, 'invalid breadcrumb link for users')
-        user_link = self.selenium.find_element_by_xpath("//div[@class='breadcrumbs']/a[last()]")
-        user_url = self.absolute_to_relative_url(user_link.get_attribute('href'))
-        user_url, user_qs = user_url.split('?')
-        self.assertEqual(user_qs, full_return_url, 'invalid breadcrumb link for current user')
+        # check form action
+        form_action = """<form enctype="multipart/form-data" action="?%s" method="post" id="user_form">""" % self.get_return_querystring()
+        self.assertContains(response, form_action, count=1)
 
-        # click delete
-        delete_submit = self.selenium.find_element_by_xpath("//input[@type='submit']")
-        delete_submit.click()
-        self.wait_selenium_ready()
+        # check Users breadcrumbs link
+        breadcrumb_users = '<a href="%s">Users</a>' % self.get_base_url()
+        self.assertContains(response, breadcrumb_users, count=1)
 
-        # check change list url still correct
-        current_url = self.absolute_to_relative_url(self.selenium.current_url)
-        self.assertEqual(current_url, return_url, 'incorrect change list url after object deletion')
+        # submit new user
+        response = self.client.post(self.get_add_url(), data=user_data)
+        self.assertRedirects(response, self.get_detail_url(self.get_sample_user_id() + 1))
+
+    def test_history_page(self):
+        ''' test history page links '''
+        response = self.client.get(self.get_history_url())
+        self.assertEqual(response.status_code, 200)
+
+        # check users breadcrumb
+        user_breadcrumb = '<a href="%s">Users</a>' % self.get_base_url()
+        self.assertContains(response, user_breadcrumb, count=1)
+
+        # check user breadcrumb
+        user_breadcrumb = '<a href="%s">joepublic</a>' % self.get_detail_url()
+        self.assertContains(response, user_breadcrumb, count=1)
+
+    def test_delete_page(self):
+        ''' test delete page links and process '''
+        response = self.client.get(self.get_delete_url())
+        self.assertEqual(response.status_code, 200)
+
+        # check users breadcrumb
+        user_breadcrumb = '<a href="%s">Users</a>' % self.get_base_url()
+        self.assertContains(response, user_breadcrumb, count=1)
+
+        # check user breadcrumb
+        user_breadcrumb = '<a href="%s">joepublic</a>' % self.get_detail_url()
+        self.assertContains(response, user_breadcrumb, count=1)
+
+        # test delete action
+        response = self.client.post(self.get_delete_url(), {'post': 'yes'})
+        self.assertRedirects(response, self.get_base_url())
 
 
 class SeleniumPrePopulatedChromeTests(SeleniumPrePopulatedFirefoxTests):
