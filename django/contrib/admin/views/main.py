@@ -14,7 +14,8 @@ from django.utils.http import urlencode
 from django.contrib.admin import FieldListFilter
 from django.contrib.admin.options import IncorrectLookupParameters
 from django.contrib.admin.util import (quote, get_fields_from_path,
-    lookup_needs_distinct, prepare_lookup_value)
+    lookup_needs_distinct, prepare_lookup_value,
+    get_changelist_filters_session_key)
 
 # Changelist settings
 ALL_VAR = 'all'
@@ -78,6 +79,19 @@ class ChangeList(object):
             title = ugettext('Select %s to change')
         self.title = title % force_text(self.opts.verbose_name)
         self.pk_attname = self.lookup_opts.pk.attname
+        self.save_filters_to_session(request)
+
+    def get_filters_session_key(self):
+        """ return session key used to store this model changelist filters state """
+        return get_changelist_filters_session_key(self.model._meta.app_label, self.model._meta.module_name)
+
+    def save_filters_to_session(self, request):
+        """ backup current filters to session for later use """
+        filters_session_key = self.get_filters_session_key()
+        if self.params:
+            request.session[filters_session_key] = self.get_query_string()
+        elif filters_session_key in request.session:
+            del request.session[filters_session_key]
 
     def get_filters(self, request):
         lookup_params = self.params.copy() # a dictionary of the query string
@@ -135,6 +149,7 @@ class ChangeList(object):
         # remaining parameters both to ensure that all the parameters are valid
         # fields and to determine if at least one of them needs distinct(). If
         # the lookup parameters aren't real fields, then bail out.
+
         try:
             for key, value in lookup_params.items():
                 lookup_params[key] = prepare_lookup_value(key, value)

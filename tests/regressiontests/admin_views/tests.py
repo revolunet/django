@@ -19,7 +19,7 @@ from django.contrib import admin
 from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
 from django.contrib.admin.models import LogEntry, DELETION
 from django.contrib.admin.sites import LOGIN_FORM_KEY
-from django.contrib.admin.util import quote
+from django.contrib.admin.util import quote, get_changelist_filters_session_key
 from django.contrib.admin.views.main import IS_POPUP_VAR
 from django.contrib.admin.tests import AdminSeleniumWebDriverTestCase
 from django.contrib.auth import REDIRECT_FIELD_NAME
@@ -32,7 +32,7 @@ from django.utils import formats, translation, unittest
 from django.utils.cache import get_max_age
 from django.utils.encoding import iri_to_uri, force_bytes
 from django.utils.html import escape
-from django.utils.http import urlencode
+from django.utils.http import urlencode, urlquote
 from django.utils._os import upath
 from django.utils import six
 from django.test.utils import override_settings
@@ -3799,3 +3799,87 @@ class AdminUserMessageTest(TestCase):
         self.assertContains(response,
                             '<li class="extra_tag info">Test tags</li>',
                             html=True)
+
+
+@override_settings(PASSWORD_HASHERS=('django.contrib.auth.hashers.SHA1PasswordHasher',))
+class AdminRememberChangeListFiltersTests(TestCase):
+    """ Ensure that change list filters are kept in memory """
+
+    urls = "regressiontests.admin_views.urls"
+    fixtures = ['admin-views-users']
+
+    def setUp(self):
+        self.client.login(username='super', password='secret')
+
+    def tearDown(self):
+        self.client.logout()
+
+    def get_sample_user_id(self):
+        return 104
+
+    def get_base_filter_querystring(self):
+        ''' sample filter to apply to the change list view '''
+        return '?' + urlencode({
+            'is_superuser__exact': 0,
+            'is_staff__exact': 0
+        })
+
+    def get_changelist_url(self):
+        ''' base change list url where we should always be redirected to '''
+        base_url = "%s%s" % (reverse('admin:auth_user_changelist'), self.get_base_filter_querystring())
+        return base_url
+
+    def get_detail_url(self):
+        ''' return sample detail page link with the return link embedded in the querystring'''
+        return reverse('admin:auth_user_change', args=(self.get_sample_user_id(),))
+
+    def get_delete_url(self):
+        ''' return delete page url with the return link embedded in the querystring'''
+        return reverse('admin:auth_user_delete', args=(self.get_sample_user_id(),))
+
+    def get_sample_user_data(self):
+        return {
+            "username": "joepublic",
+            "first_name": "Joe",
+            "last_name": "Public",
+            "email": "joepublic@example.com",
+            "is_active": "on",
+            "last_login_0": "2012-11-20",
+            "last_login_1": "18:51:53",
+            "initial-last_login_0": "2012-11-20",
+            "initial-last_login_1": "18:51:53",
+            "date_joined_0": "2012-11-20",
+            "date_joined_1": "18:51:53",
+            "initial-date_joined_0": "2012-11-20",
+            "initial-date_joined_1": "18:51:53"
+        }
+
+    def test_filters_saved(self):
+        ''' test if changelist filters are saved to session '''
+        # open the changelist view with filters
+        self.client.get(self.get_changelist_url())
+
+        # check if the filter is recorded in user session
+        session_key = get_changelist_filters_session_key('auth', 'user')
+        filter_dict_item = {session_key: self.get_base_filter_querystring()}
+        self.assertDictContainsSubset(filter_dict_item, self.client.session, msg="Filters key not found in session")
+
+    def test_change_redirect(self):
+        ''' test if we're correctly redirect on object changed '''
+        user_data = self.get_sample_user_data()
+
+        # open the changelist view with filters
+        self.client.get(self.get_changelist_url())
+
+        # test redirect on object save : should be redirect to filtered change list
+        user_data['_save'] = 1
+        response = self.client.post(self.get_detail_url(), data=user_data)
+        self.assertRedirects(response, self.get_changelist_url())
+
+    def test_delete_redirect(self):
+        ''' test if we're correctly redirect on object deleted '''
+        # open the changelist view with filters
+        self.client.get(self.get_changelist_url())
+        # test redirect on object delete : should be redirect to filtered change list
+        response = self.client.post(self.get_delete_url(), {'post': 'yes'})
+        self.assertRedirects(response, self.get_changelist_url())

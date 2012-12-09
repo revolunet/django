@@ -453,3 +453,8 @@ def get_limit_choices_to_from_path(model, path):
         return limit_choices_to # already a Q
     else:
         return models.Q(**limit_choices_to) # convert dict to Q
+
+
+def get_changelist_filters_session_key(app_label, model_name):
+    """ Returns the session key used to store this model changelist filters state """
+    return u'admin_%s_%s_filters' % (app_label, model_name)

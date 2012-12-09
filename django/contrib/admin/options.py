@@ -9,7 +9,8 @@ from django.forms.models import (modelform_factory, modelformset_factory,
     inlineformset_factory, BaseInlineFormSet)
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.admin import widgets, helpers
-from django.contrib.admin.util import quote, unquote, flatten_fieldsets, get_deleted_objects, model_format_dict
+from django.contrib.admin.util import (quote, unquote, flatten_fieldsets,
+    get_deleted_objects, model_format_dict, get_changelist_filters_session_key)
 from django.contrib.admin.templatetags.admin_static import static
 from django.contrib import messages
 from django.views.decorators.csrf import csrf_protect
@@ -38,6 +39,7 @@ HORIZONTAL, VERTICAL = 1, 2
 # returns the <ul> class for a given radio_admin field
 get_ul_class = lambda x: 'radiolist%s' % ((x == HORIZONTAL) and ' inline' or '')
 
+
 class IncorrectLookupParameters(Exception):
     pass
 
@@ -61,6 +63,7 @@ FORMFIELD_FOR_DBFIELD_DEFAULTS = {
 }
 
 csrf_protect_m = method_decorator(csrf_protect)
+
 
 class BaseModelAdmin(six.with_metaclass(forms.MediaDefiningClass)):
     """Functionality common to both ModelAdmin and InlineAdmin."""
@@ -150,7 +153,7 @@ class BaseModelAdmin(six.with_metaclass(forms.MediaDefiningClass)):
                 })
             if 'choices' not in kwargs:
                 kwargs['choices'] = db_field.get_choices(
-                    include_blank = db_field.blank,
+                    include_blank=db_field.blank,
                     blank_choice=[('', _('None'))]
                 )
         return db_field.formfield(**kwargs)
@@ -409,7 +412,7 @@ class ModelAdmin(BaseModelAdmin):
         if self.prepopulated_fields:
             js.extend(['urlify.js', 'prepopulate%s.js' % extra])
         if self.opts.get_ordered_objects():
-            js.extend(['getElementsBySelector.js', 'dom-drag.js' , 'admin/ordering.js'])
+            js.extend(['getElementsBySelector.js', 'dom-drag.js', 'admin/ordering.js'])
         return forms.Media(js=[static('admin/js/%s' % url) for url in js])
 
     def get_model_perms(self, request):
@@ -761,6 +764,14 @@ class ModelAdmin(BaseModelAdmin):
         for formset in formsets:
             self.save_formset(request, form, formset, change=change)
 
+    def get_filters_session_key(self):
+        """ return session key used to store this model changelist filters state """
+        return get_changelist_filters_session_key(self.model._meta.app_label, self.model._meta.module_name)
+
+    def get_filters_session_querystring(self, request):
+        """ return session based querystring for the changelist filters """
+        return request.session.get(self.get_filters_session_key(), '')
+
     def render_change_form(self, request, context, add=False, change=False, form_url='', obj=None):
         opts = self.model._meta
         app_label = opts.app_label
@@ -859,6 +870,7 @@ class ModelAdmin(BaseModelAdmin):
                 if hasperm_url is None:
                     hasperm_url = 'admin:%s_%s_changelist' % (app_label, model_name)
                 url = reverse(hasperm_url, current_app=site_name)
+                url += self.get_filters_session_querystring(request)
             else:
                 if noperm_url is None:
                     noperm_url = 'admin:index'
@@ -935,6 +947,7 @@ class ModelAdmin(BaseModelAdmin):
                     hasperm_url = 'admin:%s_%s_changelist' % (app_label,
                                                               model_name)
                 url = reverse(hasperm_url, current_app=site_name)
+                url += self.get_filters_session_querystring(request)
             else:
                 if noperm_url is None:
                     noperm_url = 'admin:index'
@@ -1374,9 +1387,11 @@ class ModelAdmin(BaseModelAdmin):
             if not self.has_change_permission(request, None):
                 return HttpResponseRedirect(reverse('admin:index',
                                                     current_app=self.admin_site.name))
-            return HttpResponseRedirect(reverse('admin:%s_%s_changelist' %
+            url = reverse('admin:%s_%s_changelist' %
                                         (opts.app_label, opts.module_name),
-                                        current_app=self.admin_site.name))
+                                        current_app=self.admin_site.name)
+            url += self.get_filters_session_querystring(request)
+            return HttpResponseRedirect(url)
 
         object_name = force_text(opts.verbose_name)
 
